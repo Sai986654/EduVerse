@@ -1,0 +1,6 @@
+{
+  "name": "EduVerse",
+  "description": "An immersive, AI-native learning platform with adaptive pathways, interactive course navigation, and an AI Tutor co-pilot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
