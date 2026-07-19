@@ -20,6 +20,7 @@ export interface User {
   hoursSpent: number;
   coursesCompleted: number;
   skillsMastered: number;
+  avatarUrl?: string;
 }
 
 export interface Course {

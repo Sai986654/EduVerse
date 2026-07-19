@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Course, ChatMessage, Screen } from "../types";
+import { Course, ChatMessage, Screen, User } from "../types";
 import { initialChatHistory } from "../data";
+import { getApiUrl } from "../utils/api";
 
 interface LearningPlayerViewProps {
   course: Course;
+  user: User;
   onBackToDashboard: () => void;
 }
 
-export default function LearningPlayerView({ course, onBackToDashboard }: LearningPlayerViewProps) {
+export default function LearningPlayerView({ course, user, onBackToDashboard }: LearningPlayerViewProps) {
   // Navigation states
   const [activeTab, setActiveTab] = useState<"notes" | "syllabus" | "transcript">("notes");
   
@@ -48,6 +50,27 @@ export default function LearningPlayerView({ course, onBackToDashboard }: Learni
     }
   }, [currentTime]);
 
+  // Load chat messages from database
+  useEffect(() => {
+    async function loadChatMessages() {
+      if (!user.email || !course.id) return;
+      try {
+        const response = await fetch(getApiUrl(`/api/chat/${course.id}?email=${user.email}`));
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.length > 0) {
+            setChatMessages(data);
+          } else {
+            setChatMessages(initialChatHistory);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load chat history:", err);
+      }
+    }
+    loadChatMessages();
+  }, [course.id, user.email]);
+
   // Handle Play/Pause
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
@@ -65,7 +88,7 @@ export default function LearningPlayerView({ course, onBackToDashboard }: Learni
     "How do LSTMs solve the vanishing gradient?"
   ];
 
-  // Send message to Gemini API
+  // Send message to Gemini API and persist in DB
   const handleSendMessage = async (textToSend: string) => {
     if (!textToSend.trim() || isAiLoading) return;
 
@@ -81,40 +104,18 @@ export default function LearningPlayerView({ course, onBackToDashboard }: Learni
     setIsAiLoading(true);
 
     try {
-      // Build a rolling context containing past dialogue
-      const response = await fetch("/api/tutor", {
+      const response = await fetch(getApiUrl(`/api/chat/${course.id}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          email: user.email,
           message: textToSend,
-          context: `${lectureContext} at timestamp ${formatTime(currentTime)}`,
-          history: chatMessages.slice(-5)
+          context: `${lectureContext} at timestamp ${formatTime(currentTime)}`
         })
       });
 
       if (response.ok) {
-        const data = await response.json();
-        
-        // Check if there is a code block inside the response to extract
-        let aiText = data.text || "I apologize, I didn't catch that.";
-        let codeBlock: string | undefined = undefined;
-
-        // Simple mock extraction of triple backticks
-        const codeRegex = /```(?:[a-zA-Z0-9]+)?\n([\s\S]*?)```/m;
-        const match = aiText.match(codeRegex);
-        if (match) {
-          codeBlock = match[1];
-          aiText = aiText.replace(codeRegex, "").trim();
-        }
-
-        const aiMsg: ChatMessage = {
-          id: `msg-${Date.now() + 1}`,
-          sender: "ai",
-          text: aiText,
-          timestamp: formatTime(currentTime),
-          codeBlock: codeBlock
-        };
-
+        const aiMsg = await response.json();
         setChatMessages((prev) => [...prev, aiMsg]);
       } else {
         throw new Error("Failed to contact tutor API");
@@ -131,6 +132,19 @@ export default function LearningPlayerView({ course, onBackToDashboard }: Learni
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  const handleBack = async () => {
+    try {
+      await fetch(getApiUrl(`/api/courses/${course.id}/progress`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progressPercent: course.progressPercent })
+      });
+    } catch (err) {
+      console.error("Failed to save progress:", err);
+    }
+    onBackToDashboard();
   };
 
   // Syllabus list
@@ -158,7 +172,7 @@ export default function LearningPlayerView({ course, onBackToDashboard }: Learni
       <header className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between bg-white/95 backdrop-blur-md shadow-sm">
         <div className="flex items-center gap-4">
           <button 
-            onClick={onBackToDashboard}
+            onClick={handleBack}
             className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors"
           >
             <span className="material-symbols-outlined">arrow_back</span>

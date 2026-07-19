@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Screen, User, Course, StudyPlan } from "../types";
 import { coursesList, defaultStudyPlan } from "../data";
+import { getApiUrl } from "../utils/api";
 
 interface DashboardViewProps {
   user: User;
@@ -27,6 +28,39 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
     }
   }, [user]);
 
+  // Fetch courses from database
+  useEffect(() => {
+    async function fetchCourses() {
+      try {
+        const res = await fetch(getApiUrl("/api/courses"));
+        if (res.ok) {
+          const data = await res.json();
+          setCourses(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch courses:", err);
+      }
+    }
+    fetchCourses();
+  }, []);
+
+  // Load study plan
+  useEffect(() => {
+    async function fetchStudyPlan() {
+      if (!user.email) return;
+      try {
+        const res = await fetch(getApiUrl(`/api/planner?email=${user.email}`));
+        if (res.ok) {
+          const data = await res.json();
+          setStudyPlan(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch study plan:", err);
+      }
+    }
+    fetchStudyPlan();
+  }, [user.email]);
+
   // AI Search with Gemini
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +69,7 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
     setIsSearching(true);
     setShowSearchResults(true);
     try {
-      const res = await fetch("/api/search", {
+      const res = await fetch(getApiUrl("/api/search"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: searchQuery })
@@ -55,10 +89,11 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
   const handleGeneratePlan = async () => {
     setIsGeneratingPlan(true);
     try {
-      const res = await fetch("/api/planner", {
+      const res = await fetch(getApiUrl("/api/planner"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          email: user.email,
           focus: plannerInput || "Advanced Software Engineering",
           interests: user.interests
         })
@@ -76,11 +111,26 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
     }
   };
 
-  const toggleTaskDone = (index: number) => {
+  const toggleTaskDone = async (index: number) => {
     const updatedTasks = [...studyPlan.tasks];
     updatedTasks[index].done = !updatedTasks[index].done;
-    setStudyPlan({ ...studyPlan, tasks: updatedTasks });
+    const updatedPlan = { ...studyPlan, tasks: updatedTasks };
+    setStudyPlan(updatedPlan);
+
+    try {
+      await fetch(getApiUrl("/api/planner/tasks"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          tasks: updatedTasks
+        })
+      });
+    } catch (err) {
+      console.error("Failed to sync study plan tasks:", err);
+    }
   };
+
 
   return (
     <div id="dashboard-view" className="min-h-screen bg-slate-50 text-slate-900 flex flex-col md:flex-row font-sans">
@@ -121,8 +171,12 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
         {/* User Account info / Logout */}
         <div className="border-t border-slate-100 pt-6 mt-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-              {user.fullName.split(" ").map(n => n[0]).join("")}
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden shrink-0">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                user.fullName.split(" ").map(n => n[0]).join("")
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-slate-900 truncate">{user.fullName}</p>
@@ -170,8 +224,12 @@ export default function DashboardView({ user, onSelectCourse, onSignOut }: Dashb
               <span className="text-xs text-slate-500">Level 14 Cognitive Engineer</span>
               <span className="text-xs font-semibold text-blue-600">{user.totalPoints.toLocaleString()} XP</span>
             </div>
-            <div className="w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center font-bold text-slate-800 shadow-sm">
-              {user.fullName[0]}
+            <div className="w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center font-bold text-slate-800 shadow-sm overflow-hidden shrink-0">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                user.fullName[0]
+              )}
             </div>
           </div>
         </header>
